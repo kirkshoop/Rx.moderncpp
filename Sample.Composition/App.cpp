@@ -29,33 +29,9 @@ struct View : IFrameworkViewT<View>
         m_target.Root(root);
         m_visuals = root.Children();
 
-        // NOTE: would be nice to add an overload for every event that 
-        // uses from_event.
-        // then 'auto pressed = windows.PointerPressed()'
-
-        auto pressed = Rx::from_event<PointerEventArgs>(
-            [=](auto h){
-                return window.PointerPressed(h);
-            },
-            [=](auto t) {
-                window.PointerPressed(t);
-            });
-
-        auto moved = Rx::from_event<PointerEventArgs>(
-            [=](auto h) {
-                return window.PointerMoved(h);
-            },
-            [=](auto t) {
-                window.PointerMoved(t);
-            });
-
-        auto released = Rx::from_event<PointerEventArgs>(
-            [=](auto h) {
-                return window.PointerReleased(h);
-            },
-            [=](auto t) {
-                window.PointerReleased(t);
-            });
+        auto pressed = window.PointerPressed();
+        auto moved = window.PointerMoved();
+        auto released = window.PointerReleased();
 
         // get the position for a press when ctrl is pressed.
         auto adds = pressed
