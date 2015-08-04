@@ -27,14 +27,12 @@ struct View : IFrameworkViewT<View>
         m_target = compositor.CreateTargetForCurrentView();
         m_target.Root(root);
 
-        auto visuals = Rx::observable<>::from(root.Children());
-
-        // NOTE: would be nice to add an overload for every event that 
-        // uses from_event.
-        // then 'auto pressed = windows.PointerPressed()'
+        // NOTE: moderncpp may soon include overloads for each
+        // event that will allow:
+        //   auto pressed = windows.PointerPressed();
 
         auto pressed = Rx::from_event<PointerEventArgs>(
-            [=](auto h){
+            [=](auto h) {
                 return window.PointerPressed(h);
             },
             [=](auto t) {
@@ -57,21 +55,21 @@ struct View : IFrameworkViewT<View>
                 window.PointerReleased(t);
             });
 
+        auto visuals = Rx::observable<>::from(root.Children());
+
         // get the position for a press when ctrl is pressed.
         auto adds = pressed
             .filter([](PointerEventArgs const & args) {
                 return args.KeyModifiers() == VirtualKeyModifiers::Control; 
             })
-            .map(&PositionOf)
-            .as_dynamic();
+            .map(&PositionOf);
 
         // get the position for a press when ctrl is NOT pressed.
         auto selects = pressed
             .filter([](PointerEventArgs const & args) {
                 return args.KeyModifiers() != VirtualKeyModifiers::Control; 
             })
-            .map(&PositionOf)
-            .as_dynamic();
+            .map(&PositionOf);
 
         // adds visuals
         adds
@@ -93,13 +91,13 @@ struct View : IFrameworkViewT<View>
                 visuals)
             .filter(Rx::apply_to([](Point const &, Visual const & selected) {return !!selected; }))
             .map(Rx::apply_to([=](Point const & position, Visual const & selected) {
-                using move_selected_t = std::tuple<Rx::maybe<Visual>, Vector3, Point>;
 
                 Vector3 window_offset = selected.Offset();
                 Vector3 mouse_offset = {
                     window_offset.X - position.X,
                     window_offset.Y - position.Y
                 };
+
                 // moved and released events are only consumed while the pointer 
                 // is pressed.
                 // when idle, the view is only listening to presssed events.
@@ -107,21 +105,18 @@ struct View : IFrameworkViewT<View>
                 return moved
                     .map(&PositionOf)
                     .map([=](Point const & position) { 
-                        return move_selected_t(selected, mouse_offset, position); 
+                        return std::make_tuple(selected, mouse_offset, position); 
                     })
-                    .take_until(released)
-                    .as_dynamic();
+                    .take_until(released);
             }))
             .merge()
-            .subscribe(
-                Rx::apply_to(
-                    [](Rx::maybe<Visual> selected, Vector3 offset, Point position) {
-                        selected->Offset(Vector3
-                        {
-                            position.X + offset.X,
-                            position.Y + offset.Y
-                        });
-                    }));
+            .subscribe(Rx::apply_to([](Visual selected, Vector3 offset, Point position) {
+                selected.Offset(Vector3
+                {
+                    position.X + offset.X,
+                    position.Y + offset.Y
+                });
+            }));
     }
 
     static void AddVisual(VisualCollection& visuals, Point point)
