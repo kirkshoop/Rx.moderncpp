@@ -19,7 +19,6 @@ Point PositionOf(PointerEventArgs const & args) {
 struct View : IFrameworkViewT<View>
 {
     CompositionTarget m_target = nullptr;
-    VisualCollection m_visuals = nullptr;
 
     void SetWindow(CoreWindow const & window)
     {
@@ -27,7 +26,8 @@ struct View : IFrameworkViewT<View>
         ContainerVisual root = compositor.CreateContainerVisual();
         m_target = compositor.CreateTargetForCurrentView();
         m_target.Root(root);
-        m_visuals = root.Children();
+
+        auto visuals = Rx::observable<>::from(root.Children());
 
         // NOTE: would be nice to add an overload for every event that 
         // uses from_event.
@@ -75,22 +75,25 @@ struct View : IFrameworkViewT<View>
 
         // adds visuals
         adds
-            .subscribe(
-                [this](Point const & position) {
-                    AddVisual(position);
-                });
+            .combine_latest(
+                [](Point const & position, VisualCollection visuals) {
+                    View::AddVisual(visuals, position);
+                    return visuals.Count();
+                }, 
+                visuals)
+            .subscribe();
 
         // moves selected visuals
         selects
-            .map([=](Point const & position) {
+            .combine_latest(
+                [](Point const & position, VisualCollection visuals) {
+                    Visual selected = View::SelectVisual(visuals, position);
+                    return std::make_tuple(position, selected);
+                },
+                visuals)
+            .filter(Rx::apply_to([](Point const &, Visual const & selected) {return !!selected; }))
+            .map(Rx::apply_to([=](Point const & position, Visual const & selected) {
                 using move_selected_t = std::tuple<Rx::maybe<Visual>, Vector3, Point>;
-
-                Visual selected = SelectVisual(position);
-                if (!selected) {
-                    // have to return an observable of move_selected_t
-                    // so return an empty observable
-                    return Rx::observable<>::empty<move_selected_t>().as_dynamic();
-                }
 
                 Vector3 window_offset = selected.Offset();
                 Vector3 mouse_offset = {
@@ -108,7 +111,7 @@ struct View : IFrameworkViewT<View>
                     })
                     .take_until(released)
                     .as_dynamic();
-            })
+            }))
             .merge()
             .subscribe(
                 Rx::apply_to(
@@ -121,9 +124,9 @@ struct View : IFrameworkViewT<View>
                     }));
     }
 
-    void AddVisual(Point point)
+    static void AddVisual(VisualCollection& visuals, Point point)
     {
-        Compositor compositor = m_visuals.Compositor();
+        Compositor compositor = visuals.Compositor();
         SolidColorVisual visual = compositor.CreateSolidColorVisual();
 
         static Color colors[] =
@@ -150,13 +153,13 @@ struct View : IFrameworkViewT<View>
             point.Y - BlockSize / 2.0f,
         });
 
-        m_visuals.InsertAtTop(visual);
+        visuals.InsertAtTop(visual);
     }
 
-    Visual SelectVisual(Point point)
+    static Visual SelectVisual(VisualCollection& visuals, Point point)
     {
         Visual selected = nullptr;
-        for (Visual const & visual : m_visuals)
+        for (Visual const & visual : visuals)
         {
             Vector3 offset = visual.Offset();
             Vector2 size = visual.Size();
@@ -170,8 +173,8 @@ struct View : IFrameworkViewT<View>
             }
         }
         if (selected) {
-            m_visuals.Remove(selected);
-            m_visuals.InsertAtTop(selected);
+            visuals.Remove(selected);
+            visuals.InsertAtTop(selected);
         }
         return selected;
     }
