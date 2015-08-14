@@ -460,7 +460,7 @@ Lease<To> forward(From value) noexcept
 }
 
 template <typename T>
-struct ImplementsDefault : Implements<Abi<T>>
+struct ImplementsDefault : Implements<Abi<T>, ::IAgileObject>
 {
 	using Default = T;
 };
